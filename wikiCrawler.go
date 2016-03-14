@@ -134,7 +134,8 @@ func parsePage(url string) (title, link string) {
 	doc, err := http.Get(url)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+    return "SERVER ERROR", "/wiki/SERVER_ERROR"
 	}
 
 	page, err := html.Parse(doc.Body)
@@ -256,10 +257,19 @@ func main() {
 
 	// Start goroutine for each random page to follow and wait
 	// until all are finished
+  curGos := 0
+  maxGos := 10
+  stopChan := make(chan int, maxGos)
 	for i := 0; i < *nPages; i++ {
+    if curGos >= maxGos {
+      <-stopChan
+      curGos--
+    }
 		wg.Add(1)
+    curGos++
 		go func() {
 			followPage()
+      stopChan <- -1
 			wg.Done()
 		}()
 	}
