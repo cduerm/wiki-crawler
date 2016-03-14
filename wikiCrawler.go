@@ -3,8 +3,6 @@ package main
 import (
   "fmt"
   "log"
-  //"strings"
-  //"github.com/PuerkitoBio/goquery"
   "time"
   "sort"
   "sync"
@@ -13,15 +11,18 @@ import (
   "net/http"
 )
 
+// default links to search in german Wikipedia
 var randomLink = "/wiki/Spezial:Zufällige_Seite"
 var baseLink = "https://de.wikipedia.org"
-var output = false
 
+// Commandline flags available
 var nPages = flag.Int("nPages", 100, "how many random pages to query")
-var nGos = flag.Int("nGos", 10, "how many parallel goroutines")
 var showOutput = flag.Bool("showOutput", false, "show current pages (not recommended with go > 1)")
 var request = flag.String("request", "", "request only this page, everythign else is ignored")
+var follow = flag.String("follow", "", "follow links starting on this page, everythign else is ignored")
 
+// struct to build a tree of visited pages and how many
+// they were traversed
 type Page struct {
   Title string
   Child *Page
@@ -29,14 +30,19 @@ type Page struct {
   Counter int
 }
 
-var visited map[string]*Page
-var rwmutex = &sync.Mutex{}
+var visited map[string]*Page // map of all visited pages
+var rwmutex = &sync.Mutex{} // Mutex to avoid read/write conflict
+var wg sync.WaitGroup // WaitGroup to wait for all
+//requests to be finished
 
+// Functions to sort a slice of Pages by their Counter value
 type ByCount []*Page
 func (a ByCount) Len() int { return len(a) }
 func (a ByCount) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a ByCount) Less(i, j int) bool { return a[i].Counter < a[j].Counter }
 
+// findContentNode returns the node of the div-container enclosing
+// the content text of a Wikipedia article
 func findContentNode(n *html.Node) *html.Node {
   if n.Type == html.ElementNode && n.Data == "div" {
     for _, a := range n.Attr {
@@ -54,6 +60,10 @@ func findContentNode(n *html.Node) *html.Node {
   return nil
 }
 
+// findFirstLink takes an html.Node pointing to the content
+// div-container of a Wikipedia article and returns the first
+// internal Wikipedia link to another article which is not in any
+// html-Tag and not in brackets.
 func findFirstLink(n *html.Node) string {
   balance := 0
   for a := n.FirstChild; a != nil; a = a.NextSibling {
@@ -103,6 +113,8 @@ func findFirstLink(n *html.Node) string {
   return "/wiki/NOT_FOUND"
 }
 
+// findTitle finds the title of a Wikipedia article given as
+// a html.Node.
 func findTitle(n *html.Node) string {
   if n.Type == html.ElementNode && n.Data == "h1" {
     return n.FirstChild.Data
@@ -116,6 +128,8 @@ func findTitle(n *html.Node) string {
   return ""
 }
 
+// parsePage takes an URL to a Wikipedia page and returns its
+// title and the first link.
 func parsePage(url string) (title, link string){
   doc, err := http.Get(url)
 
@@ -133,7 +147,7 @@ func parsePage(url string) (title, link string){
   }
 
   link = findFirstLink(contentNode)
-  if output {
+  if *showOutput {
     url := doc.Request.URL
     fmt.Println(url)
     fmt.Printf("  title: %s \n  link:  %s\n", title, link)
@@ -142,9 +156,9 @@ func parsePage(url string) (title, link string){
   return title, link
 }
 
+// increment All increments the Counters of already visited pages
+// until reaching a loop.
 func incrementAll(title, prevTitle string) {
-  _ = "breakpoint"
-  //rwmutex.Lock()
   recentlyVisited := make(map [string]bool)
   visited[prevTitle].Child = visited[title]
   visited[title].Counter++
@@ -176,22 +190,28 @@ func incrementAll(title, prevTitle string) {
   return
 }
 
-func followPage() {
-  var prevTitle string
-  title, link := parsePage(baseLink + randomLink)
+// followPage parses a given or otherwise random page and follows
+// its links until an already visited page is found. Visited pages
+// have their Counter increased and, if not already existing, are
+// stored including Child and Parent pages in the global map visited.
+func followPage(url ...string) {
+  var prevTitle, title, link string
+  if len(url) == 0 {
+    title, link = parsePage(baseLink + randomLink)
+  } else {
+    title, link = parsePage(url[0])
+  }
   rwmutex.Lock()
   _, exists := visited[title]
-  //rwmutex.RUnlock()
   if exists {
     rwmutex.Unlock()
     return
   }
-  //rwmutex.Lock()
   visited[title] = new(Page)
   visited[title].Title = title
   visited[title].Counter++
   rwmutex.Unlock()
-  if output {
+  if *showOutput {
     fmt.Println(title)
   }
 
@@ -201,7 +221,6 @@ func followPage() {
     rwmutex.Lock()
     _, exists = visited[title]
     if exists {
-      //rwmutex.Unlock()
       incrementAll(title, prevTitle)
       rwmutex.Unlock()
       return
@@ -216,69 +235,42 @@ func followPage() {
 }
 
 func main() {
-  flag.Parse()
+  visited = make(map[string]*Page) // Initialize map of visited pages
 
-  // uncomment to search in english Wikipedia
-  //baseLink = "https://en.wikipedia.org"
-  //randomLink = "/wiki/Special:Random"
+  flag.Parse() // Parse commandline flags and assign thenm
 
-  visited = make(map[string]*Page)
-  output = *showOutput
-
-  if *request != "" {
-    output = true
+  if *request != "" { // Just return the parse results of one page
+    *showOutput = true
     parsePage(*request)
     return
   }
 
-  //parsePage("https://de.wikipedia.org/wiki/1526")
+  if *follow != "" { // Just follow links starting on given page
+    *showOutput = true
+    followPage(*follow)
+  }
 
-  maxCount := *nPages
-  curCount := 0
-  maxGos := *nGos
-  curGos := 0
-  stopChan := make(chan int)
-  for i := 0 ; i < maxGos ; i++ {
-    if i >= maxCount {
-      break
-    }
-    curCount++
-    curGos++
+  // Start goroutine for each random page to follow and wait
+  // until all are finished
+  for i := 0; i < *nPages; i++ {
+    wg.Add(1)
     go func() {
       followPage()
-      stopChan <- 1
+      wg.Done()
     }()
   }
-  var i int
-  golauncher:
-  for  {
-    if curCount >= maxCount {
-      break golauncher
-    }
-    select {
-    case i = <-stopChan:
-      curCount += i
-      curGos--
-      go func() {
-        followPage()
-        stopChan <- 1
-      }()
-      curGos++
-    }
-  }
-  for curGos > 0 {
-    <- stopChan
-    curGos--
-  }
-  log.Println()
+  wg.Wait()
 
+  // Make list of all visited pages and sort it by Counter
   allPages := make([]*Page,len(visited))
-  i = 0
+  i := 0
   for _, val := range visited {
     allPages[i] = val
     i++
   }
   sort.Sort(ByCount(allPages))
+
+  // Print all visited pages including Counter and Child
   for _, val := range(allPages) {
     fmt.Printf("%10d\t%s\t%s\n", val.Counter, val.Title, val.Child.Title)
   }
