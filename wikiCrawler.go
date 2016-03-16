@@ -259,7 +259,7 @@ func main() {
 	// Start goroutine for each random page to follow and wait
 	// until all are finished
   curGos := 0
-  stopChan := make(chan int, maxGos)
+  stopChan := make(chan int, *nGos)
 	for i := 0; i < *nPages; i++ {
     if curGos >= *nGos {
       <-stopChan
@@ -288,7 +288,7 @@ func main() {
 	total := 0
 	for _, val := range allPages {
 		fmt.Printf("%10d\t%s\t%s\n", val.Counter, val.Title, val.Child.Title)
-		if va.COunter == 1 {
+		if val.Counter == 1 {
 			total++
 		}
 	}
