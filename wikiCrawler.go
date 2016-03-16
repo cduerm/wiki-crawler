@@ -285,7 +285,11 @@ func main() {
 	sort.Sort(ByCount(allPages))
 
 	// Print all visited pages including Counter and Child
+	total := 0
 	for _, val := range allPages {
 		fmt.Printf("%10d\t%s\t%s\n", val.Counter, val.Title, val.Child.Title)
+		if va.COunter == 1 {
+			total++
+		}
 	}
 }
