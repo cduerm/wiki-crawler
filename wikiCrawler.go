@@ -17,6 +17,7 @@ var baseLink = "https://de.wikipedia.org"
 
 // Commandline flags available
 var nPages = flag.Int("nPages", 100, "how many random pages to query")
+var nGos = flag.Int("nGos", 25, "how many concurrent clients")
 var showOutput = flag.Bool("showOutput", false, "show current pages (not recommended with go > 1)")
 var request = flag.String("request", "", "request only this page, everythign else is ignored")
 var follow = flag.String("follow", "", "follow links starting on this page, everythign else is ignored")
@@ -258,10 +259,9 @@ func main() {
 	// Start goroutine for each random page to follow and wait
 	// until all are finished
   curGos := 0
-  maxGos := 10
   stopChan := make(chan int, maxGos)
 	for i := 0; i < *nPages; i++ {
-    if curGos >= maxGos {
+    if curGos >= *nGos {
       <-stopChan
       curGos--
     }
@@ -292,4 +292,5 @@ func main() {
 			total++
 		}
 	}
+	fmt.Printf("\n%10d\ttotal\n", total)
 }
