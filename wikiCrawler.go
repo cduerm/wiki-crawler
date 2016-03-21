@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"golang.org/x/net/html"
 	"log"
 	"net/http"
 	"sort"
 	"sync"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 // default links to search in german Wikipedia
@@ -17,12 +18,12 @@ var baseLink = "https://de.wikipedia.org"
 
 // Commandline flags available
 var nPages = flag.Int("nPages", 100, "how many random pages to query")
-var nGos = flag.Int("nGos", 25, "how many concurrent clients")
+var nGos = flag.Int("nGos", 20, "how many concurrent clients")
 var showOutput = flag.Bool("showOutput", false, "show current pages (not recommended with go > 1)")
 var request = flag.String("request", "", "request only this page, everythign else is ignored")
 var follow = flag.String("follow", "", "follow links starting on this page, everythign else is ignored")
 
-// struct to build a tree of visited pages and how many
+// Page is a struct to build a tree of visited pages and how many
 // they were traversed
 type Page struct {
 	Title   string
@@ -35,7 +36,7 @@ var visited map[string]*Page // map of all visited pages
 var rwmutex = &sync.Mutex{}  // Mutex to avoid read/write conflict
 var wg sync.WaitGroup        // WaitGroup to wait for all requests to be finished
 
-// Functions to sort a slice of Pages by their Counter value
+// ByCount contains Functions to sort a slice of Pages by their Counter value
 type ByCount []*Page
 
 func (a ByCount) Len() int           { return len(a) }
@@ -136,7 +137,7 @@ func parsePage(url string) (title, link string) {
 
 	if err != nil {
 		log.Println(err)
-    return "SERVER ERROR", "/wiki/SERVER_ERROR"
+		return "SERVER ERROR", "/wiki/SERVER_ERROR"
 	}
 
 	page, err := html.Parse(doc.Body)
@@ -172,7 +173,7 @@ func incrementAll(title, prevTitle string) {
 	recentlyVisited[title] = true
 
 	for {
-		prevTitle = title
+		//prevTitle = title
 		var t *Page
 		for {
 			t = visited[title].Child
@@ -258,18 +259,13 @@ func main() {
 
 	// Start goroutine for each random page to follow and wait
 	// until all are finished
-  curGos := 0
-  stopChan := make(chan int, *nGos)
+	stopChan := make(chan int, *nGos)
 	for i := 0; i < *nPages; i++ {
-    if curGos >= *nGos {
-      <-stopChan
-      curGos--
-    }
 		wg.Add(1)
-    curGos++
+		stopChan <- 1
 		go func() {
 			followPage()
-      stopChan <- -1
+			<-stopChan
 			wg.Done()
 		}()
 	}
@@ -288,7 +284,7 @@ func main() {
 	total := 0
 	for _, val := range allPages {
 		fmt.Printf("%10d\t%s\t%s\n", val.Counter, val.Title, val.Child.Title)
-		if val.Counter == 1 {
+		if val.Counter == 1 && len(val.Parents) == 0 {
 			total++
 		}
 	}
