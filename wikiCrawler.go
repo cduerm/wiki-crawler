@@ -255,6 +255,7 @@ func main() {
 	if *follow != "" { // Just follow links starting on given page
 		*showOutput = true
 		followPage(*follow)
+		return
 	}
 
 	// Start goroutine for each random page to follow and wait
