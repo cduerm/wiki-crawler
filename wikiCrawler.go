@@ -219,7 +219,7 @@ func followPage(url ...string) {
 	visited[title].Counter++
 	rwmutex.Unlock()
 	if *showOutput {
-		fmt.Println(title)
+		// fmt.Println(title)
 	}
 
 	for {
